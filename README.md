@@ -46,7 +46,7 @@ A comprehensive web application for managing investment portfolios, analyzing as
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-username/portfolio-analyzer.git
+   git clone https://github.com/SahasG/portfolio-analyzer.git
    cd portfolio-analyzer
    ```
 
