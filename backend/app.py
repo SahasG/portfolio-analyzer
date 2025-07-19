@@ -84,6 +84,8 @@ def manage_portfolios():
     for portfolio in portfolios:
         stocks_data = []
         portfolio_value = 0.0
+        total_pl_dollar = 0.0
+        total_cost_basis = 0.0
         
         for stock in portfolio.stocks:
             current_price = ticker_prices.get(stock.ticker, 0)
