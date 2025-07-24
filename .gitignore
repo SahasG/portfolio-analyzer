@@ -10,6 +10,12 @@ ENV/
 # Environment variables
 .env
 
+# Database files (should never be committed)
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
 # IDE
 .idea/
 .vscode/
