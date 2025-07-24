@@ -11,8 +11,11 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 FMP_API_KEY = os.getenv('FMP_API_KEY')
+NEWS_API_KEY = os.getenv('NEWS_API_KEY')
 if not FMP_API_KEY:
     print("WARNING: FMP_API_KEY not found in environment variables")
+if not NEWS_API_KEY:
+    print("WARNING: NEWS_API_KEY not found in environment variables")
 
 # Constants
 FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
@@ -35,10 +38,223 @@ FMP_BASE_URL = 'https://financialmodelingprep.com/api/v3'
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///portfolio.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-from models import db, Portfolio, Stock, Strategy, StrategyAllocation
+from models import db, Portfolio, Stock, Strategy, StrategyAllocation, PortfolioHistory
+import traceback
+from textblob import TextBlob
+from nltk.sentiment import SentimentIntensityAnalyzer
+from newsapi import NewsApiClient
 
 db.init_app(app)
 migrate = Migrate(app, db)
+
+# Initialize sentiment analyzer and NewsAPI client
+sia = SentimentIntensityAnalyzer()
+news_api = NewsApiClient(api_key=NEWS_API_KEY) if NEWS_API_KEY else None
+
+# --- Sentiment Analysis Helper Functions ---
+def analyze_sentiment(text):
+    """Analyze sentiment of text using both TextBlob and NLTK VADER"""
+    if not text:
+        return {'compound': 0, 'sentiment': 'neutral', 'confidence': 0}
+    
+    try:
+        # Use NLTK VADER for more accurate financial sentiment
+        vader_scores = sia.polarity_scores(text)
+        compound = vader_scores['compound']
+        
+        # Determine sentiment category
+        if compound >= 0.05:
+            sentiment = 'positive'
+        elif compound <= -0.05:
+            sentiment = 'negative'
+        else:
+            sentiment = 'neutral'
+        
+        # Calculate confidence (absolute value of compound score)
+        confidence = abs(compound)
+        
+        return {
+            'compound': round(compound, 3),
+            'sentiment': sentiment,
+            'confidence': round(confidence, 3),
+            'positive': round(vader_scores['pos'], 3),
+            'negative': round(vader_scores['neg'], 3),
+            'neutral': round(vader_scores['neu'], 3)
+        }
+    except Exception as e:
+        print(f"Error analyzing sentiment: {e}")
+        return {'compound': 0, 'sentiment': 'neutral', 'confidence': 0}
+
+def fetch_stock_news(ticker, limit=5):
+    """Fetch recent news for a stock ticker using NewsAPI"""
+    if not news_api:
+        print("NewsAPI client not initialized - missing NEWS_API_KEY")
+        return []
+    
+    try:
+        # Search for news articles related to the stock ticker
+        # Use company name searches and ticker symbol
+        search_queries = [
+            f"{ticker} stock",
+            f"{ticker} earnings",
+            f"{ticker} company"
+        ]
+        
+        all_articles = []
+        
+        # Try different search strategies to get relevant financial news
+        for query in search_queries:
+            try:
+                # Search for articles from the last 7 days
+                articles = news_api.get_everything(
+                    q=query,
+                    language='en',
+                    sort_by='publishedAt',
+                    page_size=min(limit, 20),  # Get more to filter better results
+                    domains='reuters.com,bloomberg.com,cnbc.com,marketwatch.com,yahoo.com,wsj.com,ft.com'
+                )
+                
+                if articles['status'] == 'ok' and articles['articles']:
+                    all_articles.extend(articles['articles'])
+                    break  # Use first successful query
+                    
+            except Exception as query_error:
+                print(f"Error with query '{query}': {query_error}")
+                continue
+        
+        if not all_articles:
+            print(f"No articles found for {ticker}")
+            return []
+        
+        # Process and filter articles
+        processed_news = []
+        seen_titles = set()  # Avoid duplicates
+        
+        for article in all_articles[:limit*2]:  # Process more to filter better
+            title = article.get('title', '')
+            description = article.get('description', '')
+            content = article.get('content', '')
+            
+            # Skip if we've seen this title or if it's not relevant
+            if not title or title in seen_titles:
+                continue
+                
+            # Filter for financial relevance
+            title_lower = title.lower()
+            ticker_lower = ticker.lower()
+            
+            # Check if article is relevant to the stock
+            if (ticker_lower in title_lower or 
+                ticker_lower in (description or '').lower() or
+                any(word in title_lower for word in ['stock', 'shares', 'earnings', 'revenue', 'profit', 'loss', 'market', 'trading'])):
+                
+                seen_titles.add(title)
+                
+                # Combine title and description for sentiment analysis
+                text_for_analysis = f"{title}. {description or ''}" if description else title
+                sentiment_data = analyze_sentiment(text_for_analysis)
+                
+                # Create processed article
+                processed_article = {
+                    'title': title,
+                    'url': article.get('url', ''),
+                    'publishedDate': article.get('publishedAt', ''),
+                    'site': article.get('source', {}).get('name', 'Unknown'),
+                    'text': (description or content or '')[:300] + '...' if len(description or content or '') > 300 else (description or content or ''),
+                    'sentiment': sentiment_data
+                }
+                processed_news.append(processed_article)
+                
+                # Stop when we have enough articles
+                if len(processed_news) >= limit:
+                    break
+        
+        print(f"Successfully fetched {len(processed_news)} articles for {ticker}")
+        return processed_news
+        
+    except Exception as e:
+        print(f"Error fetching real news for {ticker}: {e}")
+        return []
+
+def generate_mock_news(ticker, limit=5):
+    """Generate realistic mock news data for demonstration purposes"""
+    from datetime import datetime, timedelta
+    import random
+    
+    # Sample news templates for different sentiment types
+    positive_templates = [
+        f"{ticker} Reports Strong Q4 Earnings, Beats Analyst Expectations",
+        f"{ticker} Announces Strategic Partnership to Drive Growth",
+        f"{ticker} Stock Rises on Positive Market Outlook",
+        f"{ticker} Launches Innovative Product Line, Investors Optimistic",
+        f"{ticker} Receives Upgrade from Major Investment Firm"
+    ]
+    
+    negative_templates = [
+        f"{ticker} Faces Regulatory Challenges in Key Markets",
+        f"{ticker} Reports Lower Than Expected Revenue Growth",
+        f"{ticker} Stock Declines Amid Market Volatility",
+        f"{ticker} CEO Departure Raises Investor Concerns",
+        f"{ticker} Faces Increased Competition in Core Business"
+    ]
+    
+    neutral_templates = [
+        f"{ticker} Maintains Steady Performance in Q4 Results",
+        f"{ticker} Announces Quarterly Dividend Payment",
+        f"{ticker} Participates in Industry Conference",
+        f"{ticker} Updates Guidance for Upcoming Quarter",
+        f"{ticker} Completes Routine Board Meeting"
+    ]
+    
+    positive_texts = [
+        "The company demonstrated exceptional performance with revenue growth exceeding market expectations. Management expressed confidence in future prospects and outlined strategic initiatives for continued expansion.",
+        "Strong fundamentals and innovative product development continue to drive investor confidence. The company's market position remains robust with significant growth opportunities ahead.",
+        "Analysts praise the company's strategic direction and execution capabilities. Recent developments position the company well for sustained growth in competitive markets."
+    ]
+    
+    negative_texts = [
+        "Market challenges and increased competition have impacted recent performance. The company faces headwinds that may affect near-term growth prospects and profitability.",
+        "Regulatory concerns and operational difficulties have created uncertainty for investors. Management is working to address these challenges but timeline remains unclear.",
+        "Economic pressures and industry disruption continue to weigh on company performance. Investors remain cautious about the company's ability to navigate current market conditions."
+    ]
+    
+    neutral_texts = [
+        "The company reported results in line with expectations, maintaining its market position. Management provided updates on ongoing initiatives and strategic priorities.",
+        "Routine business operations continue as planned with no major developments to report. The company remains focused on executing its established business strategy.",
+        "Standard quarterly activities and regular business updates were communicated to stakeholders. The company maintains its current operational approach and market focus."
+    ]
+    
+    sites = ['MarketWatch', 'Yahoo Finance', 'Reuters', 'Bloomberg', 'CNBC', 'Financial Times']
+    
+    mock_articles = []
+    for i in range(min(limit, 5)):
+        # Randomly select sentiment type
+        sentiment_type = random.choice(['positive', 'negative', 'neutral'])
+        
+        if sentiment_type == 'positive':
+            title = random.choice(positive_templates)
+            text = random.choice(positive_texts)
+        elif sentiment_type == 'negative':
+            title = random.choice(negative_templates)
+            text = random.choice(negative_texts)
+        else:
+            title = random.choice(neutral_templates)
+            text = random.choice(neutral_texts)
+        
+        # Generate realistic date (within last 7 days)
+        days_ago = random.randint(0, 7)
+        pub_date = (datetime.now() - timedelta(days=days_ago)).isoformat()
+        
+        article = {
+            'title': title,
+            'text': text,
+            'url': f'https://example.com/news/{ticker.lower()}-{i+1}',
+            'publishedDate': pub_date,
+            'site': random.choice(sites)
+        }
+        mock_articles.append(article)
+    
+    return mock_articles
 
 # API routes
 def get_stock_prices(tickers):
@@ -289,6 +505,13 @@ def add_stock_to_portfolio(portfolio_id):
         existing_stock.shares = total_shares
         existing_stock.average_price = total_cost / total_shares
         db.session.commit()
+        
+        # Create portfolio snapshot after updating stock
+        try:
+            create_portfolio_snapshot(portfolio_id)
+        except Exception as e:
+            print(f"Warning: Could not create portfolio snapshot: {e}")
+        
         return jsonify({
             'id': existing_stock.id,
             'ticker': existing_stock.ticker,
@@ -300,6 +523,13 @@ def add_stock_to_portfolio(portfolio_id):
         new_stock = Stock(ticker=ticker, shares=shares, average_price=average_price, portfolio=portfolio)
         db.session.add(new_stock)
         db.session.commit()
+        
+        # Create portfolio snapshot after adding new stock
+        try:
+            create_portfolio_snapshot(portfolio_id)
+        except Exception as e:
+            print(f"Warning: Could not create portfolio snapshot: {e}")
+        
         return jsonify({
             'id': new_stock.id,
             'ticker': new_stock.ticker,
@@ -658,6 +888,256 @@ def get_stock_price(ticker):
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'An unexpected error occurred while processing stock price data.'}), 500
+
+# --- Portfolio History Routes ---
+@app.route('/api/portfolios/<int:portfolio_id>/history', methods=['GET'])
+def get_portfolio_history(portfolio_id):
+    """Get historical performance data for a portfolio"""
+    portfolio = Portfolio.query.get_or_404(portfolio_id)
+    
+    # Get history records ordered by date
+    history_records = PortfolioHistory.query.filter_by(
+        portfolio_id=portfolio_id
+    ).order_by(PortfolioHistory.date.asc()).all()
+    
+    # If no history exists and portfolio has stocks, create a snapshot for today
+    if not history_records and portfolio.stocks:
+        create_portfolio_snapshot(portfolio_id)
+        history_records = PortfolioHistory.query.filter_by(
+            portfolio_id=portfolio_id
+        ).order_by(PortfolioHistory.date.asc()).all()
+    
+    # Format history data for frontend
+    history_data = []
+    for record in history_records:
+        history_data.append({
+            'date': record.date.isoformat(),
+            'total_value': round(record.total_value, 2),
+            'total_pl': round(record.total_pl, 2),
+            'total_pl_percent': round(record.total_pl_percent, 2)
+        })
+    
+    return jsonify(history_data)
+
+@app.route('/api/portfolios/<int:portfolio_id>/snapshot', methods=['POST'])
+def create_portfolio_snapshot(portfolio_id):
+    """Create a snapshot of current portfolio performance"""
+    portfolio = Portfolio.query.get_or_404(portfolio_id)
+    
+    # Get current portfolio data (reuse existing logic)
+    tickers = [s.ticker for s in portfolio.stocks]
+    print(f"Creating snapshot for portfolio {portfolio_id} with tickers: {tickers}")
+    
+    ticker_prices = get_stock_prices(tickers)
+    print(f"Fetched prices: {ticker_prices}")
+    
+    # If price fetching fails, try to get prices from the main portfolio endpoint logic
+    if not ticker_prices and tickers:
+        print("Primary price fetch failed, trying alternative method...")
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            ticker_str = ','.join(tickers)
+            price_url = f"{FMP_BASE_URL}/quote/{ticker_str}?apikey={FMP_API_KEY}"
+            response = requests.get(price_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            if isinstance(response.json(), list):
+                for stock_data in response.json():
+                    if 'symbol' in stock_data and 'price' in stock_data:
+                        ticker_prices[stock_data['symbol']] = stock_data['price']
+            print(f"Alternative price fetch result: {ticker_prices}")
+        except Exception as e:
+            print(f"Alternative price fetch also failed: {e}")
+    
+    # Calculate current portfolio metrics
+    portfolio_value = 0.0
+    total_pl_dollar = 0.0
+    total_cost_basis = 0.0
+    
+    for stock in portfolio.stocks:
+        current_price = ticker_prices.get(stock.ticker, 0)
+        stock_value = current_price * stock.shares if current_price else 0
+        portfolio_value += stock_value
+        
+        print(f"Stock {stock.ticker}: price={current_price}, shares={stock.shares}, value={stock_value}")
+        
+        # Calculate P/L
+        cost_basis = stock.shares * stock.average_price
+        pl_dollar = stock_value - cost_basis
+        total_pl_dollar += pl_dollar
+        total_cost_basis += cost_basis
+    
+    print(f"Final portfolio value: {portfolio_value}, P/L: {total_pl_dollar}")
+    
+    # Calculate total P/L percentage
+    total_pl_percent = (total_pl_dollar / total_cost_basis * 100) if total_cost_basis > 0 else 0
+    
+    # Check if we already have a record for today
+    today = datetime.utcnow().date()
+    existing_record = PortfolioHistory.query.filter_by(
+        portfolio_id=portfolio_id,
+        date=today
+    ).first()
+    
+    if existing_record:
+        # Update existing record
+        existing_record.total_value = portfolio_value
+        existing_record.total_pl = total_pl_dollar
+        existing_record.total_pl_percent = total_pl_percent
+    else:
+        # Create new record
+        history_record = PortfolioHistory(
+            portfolio_id=portfolio_id,
+            date=today,
+            total_value=portfolio_value,
+            total_pl=total_pl_dollar,
+            total_pl_percent=total_pl_percent
+        )
+        db.session.add(history_record)
+    
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Portfolio snapshot created successfully',
+        'date': today.isoformat(),
+        'total_value': round(portfolio_value, 2),
+        'total_pl': round(total_pl_dollar, 2),
+        'total_pl_percent': round(total_pl_percent, 2)
+    })
+
+# --- News Sentiment Analysis Routes ---
+@app.route('/api/stocks/<ticker>/news-sentiment', methods=['GET'])
+def get_stock_news_sentiment(ticker):
+    """Get news sentiment analysis for a specific stock"""
+    try:
+        ticker = ticker.upper()
+        limit = request.args.get('limit', 5, type=int)
+        limit = min(max(limit, 1), 10)  # Limit between 1-10 articles
+        
+        # Fetch news with sentiment analysis
+        news_articles = fetch_stock_news(ticker, limit)
+        
+        if not news_articles:
+            return jsonify({
+                'ticker': ticker,
+                'articles': [],
+                'overall_sentiment': {
+                    'sentiment': 'neutral',
+                    'compound': 0,
+                    'confidence': 0,
+                    'article_count': 0
+                }
+            })
+        
+        # Calculate overall sentiment from all articles
+        total_compound = 0
+        sentiment_counts = {'positive': 0, 'negative': 0, 'neutral': 0}
+        
+        for article in news_articles:
+            sentiment_data = article['sentiment']
+            total_compound += sentiment_data['compound']
+            sentiment_counts[sentiment_data['sentiment']] += 1
+        
+        avg_compound = total_compound / len(news_articles)
+        
+        # Determine overall sentiment
+        if avg_compound >= 0.05:
+            overall_sentiment = 'positive'
+        elif avg_compound <= -0.05:
+            overall_sentiment = 'negative'
+        else:
+            overall_sentiment = 'neutral'
+        
+        return jsonify({
+            'ticker': ticker,
+            'articles': news_articles,
+            'overall_sentiment': {
+                'sentiment': overall_sentiment,
+                'compound': round(avg_compound, 3),
+                'confidence': round(abs(avg_compound), 3),
+                'article_count': len(news_articles),
+                'sentiment_distribution': sentiment_counts
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error fetching news sentiment for {ticker}: {e}")
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to fetch news sentiment'}), 500
+
+@app.route('/api/portfolios/<int:portfolio_id>/news-sentiment', methods=['GET'])
+def get_portfolio_news_sentiment(portfolio_id):
+    """Get news sentiment analysis for all stocks in a portfolio"""
+    try:
+        portfolio = Portfolio.query.get_or_404(portfolio_id)
+        
+        if not portfolio.stocks:
+            return jsonify({
+                'portfolio_id': portfolio_id,
+                'portfolio_name': portfolio.name,
+                'stocks': [],
+                'overall_sentiment': {
+                    'sentiment': 'neutral',
+                    'compound': 0,
+                    'confidence': 0
+                }
+            })
+        
+        portfolio_sentiment_data = []
+        total_compound = 0
+        total_articles = 0
+        
+        for stock in portfolio.stocks:
+            # Get news sentiment for each stock
+            news_articles = fetch_stock_news(stock.ticker, 3)  # Limit to 3 articles per stock
+            
+            if news_articles:
+                # Calculate stock sentiment
+                stock_compound = sum(article['sentiment']['compound'] for article in news_articles) / len(news_articles)
+                stock_sentiment = 'positive' if stock_compound >= 0.05 else 'negative' if stock_compound <= -0.05 else 'neutral'
+                
+                total_compound += stock_compound
+                total_articles += len(news_articles)
+            else:
+                stock_compound = 0
+                stock_sentiment = 'neutral'
+            
+            portfolio_sentiment_data.append({
+                'ticker': stock.ticker,
+                'shares': stock.shares,
+                'sentiment': {
+                    'sentiment': stock_sentiment,
+                    'compound': round(stock_compound, 3),
+                    'confidence': round(abs(stock_compound), 3),
+                    'article_count': len(news_articles)
+                },
+                'recent_articles': news_articles[:2]  # Include 2 most recent articles
+            })
+        
+        # Calculate overall portfolio sentiment
+        if total_articles > 0:
+            avg_compound = total_compound / len(portfolio.stocks)
+            overall_sentiment = 'positive' if avg_compound >= 0.05 else 'negative' if avg_compound <= -0.05 else 'neutral'
+        else:
+            avg_compound = 0
+            overall_sentiment = 'neutral'
+        
+        return jsonify({
+            'portfolio_id': portfolio_id,
+            'portfolio_name': portfolio.name,
+            'stocks': portfolio_sentiment_data,
+            'overall_sentiment': {
+                'sentiment': overall_sentiment,
+                'compound': round(avg_compound, 3),
+                'confidence': round(abs(avg_compound), 3),
+                'total_articles': total_articles
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error fetching portfolio news sentiment: {e}")
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to fetch portfolio news sentiment'}), 500
 
 if __name__ == '__main__':
     with app.app_context():

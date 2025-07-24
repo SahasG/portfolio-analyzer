@@ -12,13 +12,32 @@ import {
   FiPackage,
   FiArrowLeft
 } from 'react-icons/fi';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
-import { Doughnut } from 'react-chartjs-2';
+import { 
+  Chart as ChartJS, 
+  ArcElement, 
+  Tooltip, 
+  Legend,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title
+} from 'chart.js';
+import { Doughnut, Line } from 'react-chartjs-2';
 import StrategyForm from './StrategyForm';
 import Recommendations from './Recommendations';
 
 // Register ChartJS components
-ChartJS.register(ArcElement, Tooltip, Legend);
+ChartJS.register(
+  ArcElement, 
+  Tooltip, 
+  Legend, 
+  CategoryScale, 
+  LinearScale, 
+  PointElement, 
+  LineElement, 
+  Title
+);
 
 // Set ChartJS default font
 ChartJS.defaults.font.family = 'Inter, system-ui, -apple-system, sans-serif';
@@ -68,7 +87,7 @@ const formatPLPercentage = (plPercent: number | string | undefined | null): stri
 };
 
 // Interfaces
-type TabType = 'stocks' | 'strategy' | 'recommendations';
+type TabType = 'stocks' | 'strategy' | 'recommendations' | 'sentiment';
 
 interface Stock {
   id: number;
@@ -124,6 +143,47 @@ interface ChartTooltipContext {
   };
 }
 
+// Historical performance data interface
+interface HistoricalData {
+  date: string;
+  total_value: number;
+  total_pl: number;
+  total_pl_percent: number;
+}
+
+// News sentiment analysis interfaces
+interface SentimentData {
+  sentiment: 'positive' | 'negative' | 'neutral';
+  compound: number;
+  confidence: number;
+  positive?: number;
+  negative?: number;
+  neutral?: number;
+}
+
+interface NewsArticle {
+  title: string;
+  url: string;
+  publishedDate: string;
+  site: string;
+  text: string;
+  sentiment: SentimentData;
+}
+
+interface StockSentiment {
+  ticker: string;
+  shares: number;
+  sentiment: SentimentData & { article_count: number };
+  recent_articles: NewsArticle[];
+}
+
+interface PortfolioSentiment {
+  portfolio_id: number;
+  portfolio_name: string;
+  stocks: StockSentiment[];
+  overall_sentiment: SentimentData & { total_articles: number };
+}
+
 // Color palette for charts
 const CHART_COLORS = [
   '#3B82F6', // blue-500
@@ -161,6 +221,12 @@ const PortfolioDetail: React.FC = () => {
     };
   };
 
+  // Fetch historical performance data
+  const fetchHistoricalData = async (portfolioId: string): Promise<HistoricalData[]> => {
+    const { data } = await axios.get<HistoricalData[]>(`http://localhost:5001/api/portfolios/${portfolioId}/history`);
+    return data;
+  };
+
   // Query hooks
   const { 
     data: portfolio, 
@@ -171,6 +237,34 @@ const PortfolioDetail: React.FC = () => {
     queryKey: ['portfolio', id],
     queryFn: () => id ? fetchPortfolio(id) : Promise.reject(new Error('No portfolio ID')),
     enabled: !!id,
+  });
+
+  // Historical data query
+  const { 
+    data: historicalData, 
+    isLoading: isHistoryLoading 
+  } = useQuery<HistoricalData[], Error>({
+    queryKey: ['portfolio-history', id],
+    queryFn: () => id ? fetchHistoricalData(id) : Promise.reject(new Error('No portfolio ID')),
+    enabled: !!id,
+  });
+
+  // Fetch portfolio sentiment data
+  const fetchPortfolioSentiment = async (portfolioId: string): Promise<PortfolioSentiment> => {
+    const { data } = await axios.get<PortfolioSentiment>(`http://localhost:5001/api/portfolios/${portfolioId}/news-sentiment`);
+    return data;
+  };
+
+  // Portfolio sentiment query
+  const { 
+    data: sentimentData, 
+    isLoading: isSentimentLoading,
+    error: sentimentError 
+  } = useQuery<PortfolioSentiment, Error>({
+    queryKey: ['portfolio-sentiment', id],
+    queryFn: () => id ? fetchPortfolioSentiment(id) : Promise.reject(new Error('No portfolio ID')),
+    enabled: !!id && activeTab === 'sentiment',
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   // Mutation hooks
@@ -272,6 +366,164 @@ const PortfolioDetail: React.FC = () => {
   };
 
   // Render tab content based on active tab
+  // Helper function to get sentiment color
+  const getSentimentColor = (sentiment: string) => {
+    switch (sentiment) {
+      case 'positive': return 'text-green-600 bg-green-50 border-green-200';
+      case 'negative': return 'text-red-600 bg-red-50 border-red-200';
+      default: return 'text-gray-600 bg-gray-50 border-gray-200';
+    }
+  };
+
+  // Helper function to get sentiment icon
+  const getSentimentIcon = (sentiment: string) => {
+    switch (sentiment) {
+      case 'positive': return '📈';
+      case 'negative': return '📉';
+      default: return '📊';
+    }
+  };
+
+  // Render sentiment analysis component
+  const renderSentimentAnalysis = () => {
+    if (isSentimentLoading) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="flex items-center space-x-2">
+            {FiLoader({ className: "animate-spin h-5 w-5 text-blue-500" })}
+            <span className="text-sm text-gray-500">Analyzing market sentiment...</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (sentimentError) {
+      return (
+        <div className="bg-white shadow-xl rounded-xl border-2 border-gray-100 p-6">
+          <div className="flex items-center space-x-2 text-red-600">
+            {FiAlertCircle({ className: "h-5 w-5" })}
+            <span>Failed to load sentiment analysis</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (!sentimentData || !sentimentData.stocks.length) {
+      return (
+        <div className="bg-white shadow-xl rounded-xl border-2 border-gray-100 p-6">
+          <div className="text-center py-8">
+            <div className="text-6xl mb-4">📰</div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Sentiment Data Available</h3>
+            <p className="text-gray-500">Add stocks to your portfolio to see news sentiment analysis</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Overall Portfolio Sentiment */}
+        <div className="bg-white shadow-xl rounded-xl border-2 border-gray-100 p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Portfolio Sentiment Overview</h3>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <span className="text-2xl">{getSentimentIcon(sentimentData.overall_sentiment.sentiment)}</span>
+              <div>
+                <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${
+                  getSentimentColor(sentimentData.overall_sentiment.sentiment)
+                }`}>
+                  {sentimentData.overall_sentiment.sentiment.charAt(0).toUpperCase() + 
+                   sentimentData.overall_sentiment.sentiment.slice(1)} Sentiment
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  Based on {sentimentData.overall_sentiment.total_articles} recent articles
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-lg font-semibold text-gray-900">
+                {(sentimentData.overall_sentiment.compound * 100).toFixed(1)}%
+              </div>
+              <div className="text-sm text-gray-500">Confidence Score</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Individual Stock Sentiment */}
+        <div className="bg-white shadow-xl rounded-xl border-2 border-gray-100 p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Stock-by-Stock Analysis</h3>
+          <div className="space-y-4">
+            {sentimentData.stocks.map((stock) => (
+              <div key={stock.ticker} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-3">
+                    <span className="font-semibold text-gray-900">{stock.ticker}</span>
+                    <span className="text-sm text-gray-500">({stock.shares} shares)</span>
+                    <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${
+                      getSentimentColor(stock.sentiment.sentiment)
+                    }`}>
+                      {getSentimentIcon(stock.sentiment.sentiment)} {stock.sentiment.sentiment}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold text-gray-900">
+                      {(stock.sentiment.compound * 100).toFixed(1)}%
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {stock.sentiment.article_count} articles
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Recent Articles */}
+                {stock.recent_articles.length > 0 && (
+                  <div className="mt-3">
+                    <h5 className="text-sm font-medium text-gray-700 mb-2">Recent News:</h5>
+                    <div className="space-y-2">
+                      {stock.recent_articles.map((article, index) => (
+                        <div key={index} className="bg-gray-50 rounded-md p-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <a 
+                                href={article.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-blue-600 hover:text-blue-800 line-clamp-2"
+                              >
+                                {article.title}
+                              </a>
+                              <div className="flex items-center space-x-2 mt-1">
+                                <span className="text-xs text-gray-500">{article.site}</span>
+                                <span className="text-xs text-gray-400">•</span>
+                                <span className="text-xs text-gray-500">
+                                  {new Date(article.publishedDate).toLocaleDateString()}
+                                </span>
+                              </div>
+                            </div>
+                            <div className={`ml-3 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${
+                              getSentimentColor(article.sentiment.sentiment)
+                            }`}>
+                              {getSentimentIcon(article.sentiment.sentiment)}
+                            </div>
+                          </div>
+                          {article.text && (
+                            <p className="text-xs text-gray-600 mt-2 line-clamp-2">
+                              {article.text}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderTabContent = () => {
     if (!portfolio) return null;
     
@@ -528,6 +780,119 @@ const PortfolioDetail: React.FC = () => {
                       {portfolio.total_pl_percent ? formatPLPercentage(portfolio.total_pl_percent) : 'N/A'}
                     </span>
                   </div>
+                  
+                  {/* Historical Performance Chart */}
+                  <div className="mt-6 pt-6 border-t border-gray-200">
+                    <h4 className="text-md font-medium text-gray-900 mb-4">Portfolio Growth Timeline</h4>
+                    {isHistoryLoading ? (
+                      <div className="flex items-center justify-center h-64">
+                        <div className="flex items-center space-x-2">
+                          {FiLoader({ className: "animate-spin h-5 w-5 text-blue-500" })}
+                          <span className="text-sm text-gray-500">Loading performance history...</span>
+                        </div>
+                      </div>
+                    ) : historicalData && historicalData.length > 0 ? (
+                      <div className="h-64">
+                        <Line
+                          data={{
+                            labels: historicalData.map(item => 
+                              new Date(item.date).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric' 
+                              })
+                            ),
+                            datasets: [
+                              {
+                                label: 'Portfolio Value',
+                                data: historicalData.map(item => item.total_value),
+                                borderColor: '#3B82F6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                fill: true,
+                                tension: 0.4,
+                                pointBackgroundColor: '#3B82F6',
+                                pointBorderColor: '#ffffff',
+                                pointBorderWidth: 2,
+                                pointRadius: 4,
+                                pointHoverRadius: 6,
+                              },
+                            ],
+                          }}
+                          options={{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                              legend: {
+                                display: false,
+                              },
+                              tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                titleColor: 'white',
+                                bodyColor: 'white',
+                                borderColor: '#3B82F6',
+                                borderWidth: 1,
+                                callbacks: {
+                                  label: function(context) {
+                                    const dataIndex = context.dataIndex;
+                                    const historyItem = historicalData[dataIndex];
+                                    const value = formatCurrency(context.parsed.y);
+                                    const pl = formatCurrency(historyItem.total_pl);
+                                    const plPercent = formatPLPercentage(historyItem.total_pl_percent);
+                                    return [
+                                      `Portfolio Value: ${value}`,
+                                      `Total P/L: ${pl} (${plPercent})`
+                                    ];
+                                  },
+                                },
+                              },
+                            },
+                            scales: {
+                              x: {
+                                display: true,
+                                grid: {
+                                  display: false,
+                                },
+                                ticks: {
+                                  color: '#6B7280',
+                                  font: {
+                                    size: 11,
+                                  },
+                                },
+                              },
+                              y: {
+                                display: true,
+                                grid: {
+                                  color: 'rgba(0, 0, 0, 0.1)',
+                                },
+                                ticks: {
+                                  color: '#6B7280',
+                                  font: {
+                                    size: 11,
+                                  },
+                                  callback: function(value) {
+                                    return formatCurrency(value as number);
+                                  },
+                                },
+                              },
+                            },
+                            interaction: {
+                              mode: 'index',
+                              intersect: false,
+                            },
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-32 bg-gray-50 rounded-lg">
+                        <div className="text-center">
+                          {FiTrendingUp({ className: "mx-auto h-8 w-8 text-gray-400 mb-2" })}
+                          <p className="text-sm text-gray-500">No historical data available yet</p>
+                          <p className="text-xs text-gray-400 mt-1">Performance tracking will begin after your first day</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -547,6 +912,8 @@ const PortfolioDetail: React.FC = () => {
             onCashUpdate={(cash) => setAvailableCash(cash)} 
           />
         );
+      case 'sentiment':
+        return renderSentimentAnalysis();
       default:
         return null;
     }
@@ -651,7 +1018,7 @@ const PortfolioDetail: React.FC = () => {
       {/* Tab navigation */}
       <div className="mt-8">
         <nav className="flex space-x-8 border-b border-gray-200">
-          {(['stocks', 'strategy', 'recommendations'] as TabType[]).map((tab) => (
+          {(['stocks', 'strategy', 'recommendations', 'sentiment'] as TabType[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
