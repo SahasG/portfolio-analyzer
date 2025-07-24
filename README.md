@@ -28,6 +28,16 @@ A sophisticated web application for comprehensive investment portfolio managemen
 - **Interactive Visualizations**: Dynamic pie charts with Chart.js integration
 - **Portfolio Distribution**: Real-time allocation breakdowns
 - **Historical Analysis**: 1-year historical data for comprehensive market timing
+- **Portfolio Growth Timeline**: Interactive line charts showing portfolio value progression over time
+- **Historical Performance Tracking**: Daily snapshots with automatic value calculations
+
+### 📰 Market Sentiment Analysis
+- **Real-time News Integration**: Live financial news from major sources (Reuters, Bloomberg, CNBC, Yahoo Finance)
+- **AI-Powered Sentiment Analysis**: NLTK VADER sentiment scoring for financial context
+- **Portfolio-wide Sentiment**: Aggregated sentiment analysis across all holdings
+- **Stock-level Insights**: Individual sentiment scores with confidence ratings
+- **News Article Display**: Clickable headlines with publication dates and sources
+- **Color-coded Indicators**: Visual sentiment badges (positive/negative/neutral) with emoji icons
 
 ### 🎨 Modern User Experience
 - **React 19 + TypeScript**: Latest technology stack for optimal performance
@@ -53,11 +63,15 @@ A sophisticated web application for comprehensive investment portfolio managemen
 - **RESTful API** with comprehensive error handling
 - **CORS** enabled for cross-origin requests
 - **Request validation** and data sanitization
+- **NLTK & TextBlob** for AI-powered sentiment analysis
+- **NewsAPI** integration for real-time financial news
 
 ### Data & APIs
 - **Financial Modeling Prep API** for real-time market data
+- **NewsAPI** for live financial news from major sources
 - **1-year historical data** for multi-timeframe analysis
 - **Real-time price feeds** with automatic updates
+- **Portfolio history tracking** with daily performance snapshots
 - **Comprehensive error handling** for API failures
 
 ### Key Algorithms
@@ -102,6 +116,28 @@ Our sophisticated recommendation system uses multi-timeframe analysis:
 - **Real-time Data Sync**: Live updates without page refreshes
 - **Professional Styling**: Clean, modern interface with Tailwind CSS
 
+## 🆕 Recent Updates & Bug Fixes
+
+### ✅ Portfolio Growth Timeline Fix (Latest)
+- **Issue Resolved**: Fixed critical bug where Portfolio Growth Timeline displayed $0.00 instead of actual portfolio value
+- **Root Cause**: Portfolio snapshot creation was failing to fetch stock prices correctly
+- **Solution**: Enhanced price fetching with fallback logic and improved error handling
+- **Result**: Timeline now accurately displays portfolio value progression (e.g., $24,689.22)
+- **Improvements**: Added debugging output and alternative price fetching methods for reliability
+
+### 🚀 Real News Sentiment Analysis Enhancement
+- **Feature**: Upgraded from mock news to real financial news integration
+- **Data Sources**: Live news from Reuters, Bloomberg, CNBC, Yahoo Finance, MarketWatch, WSJ
+- **AI Analysis**: NLTK VADER sentiment analysis optimized for financial context
+- **UI Enhancements**: Color-coded sentiment badges, clickable article links, publication dates
+- **Performance**: 5-minute caching with React Query for optimal user experience
+
+### 🔧 Technical Improvements
+- **React 19 Compatibility**: Fixed React Icons TypeScript errors with function call syntax
+- **Database Reliability**: Enhanced portfolio history tracking with automatic snapshot creation
+- **Error Handling**: Improved API error handling and fallback mechanisms
+- **Price Fetching**: Robust stock price retrieval with multiple fallback strategies
+
 ## 🛠️ Installation
 
 ### Prerequisites
@@ -109,6 +145,7 @@ Our sophisticated recommendation system uses multi-timeframe analysis:
 - **Python** (3.8 or later)
 - **npm** or **yarn** package manager
 - **Financial Modeling Prep API Key** (free tier available)
+- **NewsAPI Key** (free tier available) for real-time news sentiment analysis
 
 ### Setup
 
@@ -127,10 +164,13 @@ Our sophisticated recommendation system uses multi-timeframe analysis:
    ```
 
 3. **Configure API Access**
+   Create a `.env` file in the backend directory:
    ```bash
    # Get your free API key from https://financialmodelingprep.com/
-   export FMP_API_KEY="your_api_key_here"
-   # Or add to your shell profile for persistence
+   FMP_API_KEY=your_fmp_api_key_here
+   
+   # Get your free NewsAPI key from https://newsapi.org/
+   NEWS_API_KEY=your_newsapi_key_here
    ```
 
 4. **Initialize the database**
