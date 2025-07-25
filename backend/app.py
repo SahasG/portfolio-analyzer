@@ -30,11 +30,6 @@ CORS(app, resources={
     }
 })
 
-# --- Financial Modeling Prep API Configuration ---
-# IMPORTANT: You need a free API key from https://financialmodelingprep.com/developer
-FMP_API_KEY = os.getenv('FMP_API_KEY')
-FMP_BASE_URL = 'https://financialmodelingprep.com/api/v3'
-
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///portfolio.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -176,85 +171,6 @@ def fetch_stock_news(ticker, limit=5):
         print(f"Error fetching real news for {ticker}: {e}")
         return []
 
-def generate_mock_news(ticker, limit=5):
-    """Generate realistic mock news data for demonstration purposes"""
-    from datetime import datetime, timedelta
-    import random
-    
-    # Sample news templates for different sentiment types
-    positive_templates = [
-        f"{ticker} Reports Strong Q4 Earnings, Beats Analyst Expectations",
-        f"{ticker} Announces Strategic Partnership to Drive Growth",
-        f"{ticker} Stock Rises on Positive Market Outlook",
-        f"{ticker} Launches Innovative Product Line, Investors Optimistic",
-        f"{ticker} Receives Upgrade from Major Investment Firm"
-    ]
-    
-    negative_templates = [
-        f"{ticker} Faces Regulatory Challenges in Key Markets",
-        f"{ticker} Reports Lower Than Expected Revenue Growth",
-        f"{ticker} Stock Declines Amid Market Volatility",
-        f"{ticker} CEO Departure Raises Investor Concerns",
-        f"{ticker} Faces Increased Competition in Core Business"
-    ]
-    
-    neutral_templates = [
-        f"{ticker} Maintains Steady Performance in Q4 Results",
-        f"{ticker} Announces Quarterly Dividend Payment",
-        f"{ticker} Participates in Industry Conference",
-        f"{ticker} Updates Guidance for Upcoming Quarter",
-        f"{ticker} Completes Routine Board Meeting"
-    ]
-    
-    positive_texts = [
-        "The company demonstrated exceptional performance with revenue growth exceeding market expectations. Management expressed confidence in future prospects and outlined strategic initiatives for continued expansion.",
-        "Strong fundamentals and innovative product development continue to drive investor confidence. The company's market position remains robust with significant growth opportunities ahead.",
-        "Analysts praise the company's strategic direction and execution capabilities. Recent developments position the company well for sustained growth in competitive markets."
-    ]
-    
-    negative_texts = [
-        "Market challenges and increased competition have impacted recent performance. The company faces headwinds that may affect near-term growth prospects and profitability.",
-        "Regulatory concerns and operational difficulties have created uncertainty for investors. Management is working to address these challenges but timeline remains unclear.",
-        "Economic pressures and industry disruption continue to weigh on company performance. Investors remain cautious about the company's ability to navigate current market conditions."
-    ]
-    
-    neutral_texts = [
-        "The company reported results in line with expectations, maintaining its market position. Management provided updates on ongoing initiatives and strategic priorities.",
-        "Routine business operations continue as planned with no major developments to report. The company remains focused on executing its established business strategy.",
-        "Standard quarterly activities and regular business updates were communicated to stakeholders. The company maintains its current operational approach and market focus."
-    ]
-    
-    sites = ['MarketWatch', 'Yahoo Finance', 'Reuters', 'Bloomberg', 'CNBC', 'Financial Times']
-    
-    mock_articles = []
-    for i in range(min(limit, 5)):
-        # Randomly select sentiment type
-        sentiment_type = random.choice(['positive', 'negative', 'neutral'])
-        
-        if sentiment_type == 'positive':
-            title = random.choice(positive_templates)
-            text = random.choice(positive_texts)
-        elif sentiment_type == 'negative':
-            title = random.choice(negative_templates)
-            text = random.choice(negative_texts)
-        else:
-            title = random.choice(neutral_templates)
-            text = random.choice(neutral_texts)
-        
-        # Generate realistic date (within last 7 days)
-        days_ago = random.randint(0, 7)
-        pub_date = (datetime.now() - timedelta(days=days_ago)).isoformat()
-        
-        article = {
-            'title': title,
-            'text': text,
-            'url': f'https://example.com/news/{ticker.lower()}-{i+1}',
-            'publishedDate': pub_date,
-            'site': random.choice(sites)
-        }
-        mock_articles.append(article)
-    
-    return mock_articles
 
 # API routes
 def get_stock_prices(tickers):
