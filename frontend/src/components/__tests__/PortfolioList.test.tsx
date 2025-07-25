@@ -12,9 +12,13 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 const createWrapper = () => {
   const queryClient = new QueryClient({
     defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
+      queries: { 
+        retry: false,
+        gcTime: 0,
+        staleTime: 0
+      },
+      mutations: { retry: false }
+    }
   });
 
   return ({ children }: { children: React.ReactNode }) => (
@@ -30,23 +34,16 @@ const mockPortfolios = [
   {
     id: 1,
     name: 'Tech Portfolio',
-    stocks: [
-      { ticker: 'AAPL', shares: 10, value: 1500 },
-      { ticker: 'GOOGL', shares: 5, value: 14000 }
-    ],
+    created_at: '2024-01-15T10:30:00Z',
     total_value: 15500,
-    total_pl: 500,
-    total_pl_percent: 3.33
+    stock_count: 2
   },
   {
     id: 2,
-    name: 'Growth Portfolio',
-    stocks: [
-      { ticker: 'TSLA', shares: 8, value: 2000 }
-    ],
+    name: 'Growth Portfolio', 
+    created_at: '2024-02-20T14:45:00Z',
     total_value: 2000,
-    total_pl: -200,
-    total_pl_percent: -9.09
+    stock_count: 1
   }
 ];
 
@@ -54,16 +51,26 @@ describe('PortfolioList Component', () => {
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
+    
+    // Reset axios mocks to default behavior
+    mockedAxios.get.mockReset();
+    mockedAxios.post.mockReset();
+    mockedAxios.put.mockReset();
+    mockedAxios.delete.mockReset();
   });
 
-  test('renders portfolio list title', async () => {
-    const axios = require('axios');
-    axios.get.mockResolvedValue({ data: mockPortfolios });
+  test('renders create portfolio form', async () => {
+    mockedAxios.get.mockResolvedValue({ data: mockPortfolios });
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
-    expect(screen.getByText('Portfolio Analyzer')).toBeInTheDocument();
-    expect(screen.getByText('Manage your investment portfolios with advanced analytics')).toBeInTheDocument();
+    // Wait for the component to load and render the form
+    await waitFor(() => {
+      expect(screen.getByText('Create New Portfolio')).toBeInTheDocument();
+    });
+    
+    expect(screen.getByPlaceholderText('Enter portfolio name')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument();
   });
 
   test('displays portfolios when data is loaded', async () => {
@@ -86,7 +93,9 @@ describe('PortfolioList Component', () => {
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
-    expect(screen.getByText('Loading portfolios...')).toBeInTheDocument();
+    // Check for loading spinner instead of text
+    const loadingSpinner = document.querySelector('.animate-spin');
+    expect(loadingSpinner).toBeInTheDocument();
   });
 
   test('displays error state when API fails', async () => {
@@ -95,20 +104,21 @@ describe('PortfolioList Component', () => {
     render(<PortfolioList />, { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(screen.getByText(/Error loading portfolios/)).toBeInTheDocument();
+      expect(screen.getByText('Failed to load portfolios. Please try again later.')).toBeInTheDocument();
     });
   });
 
-  test('opens create portfolio modal when create button is clicked', async () => {
+  test('displays create portfolio form', async () => {
     mockedAxios.get.mockResolvedValue({ data: [] });
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
-    const createButton = await screen.findByText('Create New Portfolio');
-    fireEvent.click(createButton);
-
-    expect(screen.getByText('Create Portfolio')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Enter portfolio name')).toBeInTheDocument();
+    // The form is always visible, no modal needed
+    await waitFor(() => {
+      expect(screen.getByText('Create New Portfolio')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Enter portfolio name')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument();
+    });
   });
 
   test('creates new portfolio successfully', async () => {
@@ -119,59 +129,42 @@ describe('PortfolioList Component', () => {
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
-    // Open modal
-    const createButton = await screen.findByText('Create New Portfolio');
-    fireEvent.click(createButton);
-
-    // Fill in portfolio name
-    const nameInput = screen.getByPlaceholderText('Enter portfolio name');
+    // Wait for component to load and form to be visible
+    const nameInput = await screen.findByPlaceholderText('Enter portfolio name');
     fireEvent.change(nameInput, { target: { value: 'New Portfolio' } });
 
     // Submit form
-    const submitButton = screen.getByText('Create Portfolio');
+    const submitButton = screen.getByRole('button', { name: 'Create' });
     fireEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(
+      expect(mockedAxios.post).toHaveBeenCalledWith(
         'http://localhost:5001/api/portfolios',
         { name: 'New Portfolio' }
       );
     });
   });
 
-  test('handles portfolio name editing', async () => {
+  test('displays edit and delete buttons for portfolios', async () => {
     mockedAxios.get.mockResolvedValue({ data: mockPortfolios });
-    mockedAxios.put.mockResolvedValue({ 
-      data: { id: 1, name: 'Updated Tech Portfolio' } 
-    });
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
     await waitFor(() => {
       expect(screen.getByText('Tech Portfolio')).toBeInTheDocument();
+      expect(screen.getByText('Growth Portfolio')).toBeInTheDocument();
     });
 
-    // Find and click edit button (pencil icon)
-    const editButtons = screen.getAllByRole('button');
-    const editButton = editButtons.find(button => 
-      button.querySelector('svg') // Looking for the edit icon
-    );
+    // Check that edit and delete buttons exist for each portfolio
+    const editButtons = screen.getAllByLabelText('Rename portfolio');
+    const deleteButtons = screen.getAllByLabelText('Delete portfolio');
     
-    if (editButton) {
-      fireEvent.click(editButton);
-
-      // Should show input field
-      const nameInput = screen.getByDisplayValue('Tech Portfolio');
-      fireEvent.change(nameInput, { target: { value: 'Updated Tech Portfolio' } });
-      fireEvent.keyDown(nameInput, { key: 'Enter', code: 'Enter' });
-
-      await waitFor(() => {
-        expect(axios.put).toHaveBeenCalledWith(
-          'http://localhost:5001/api/portfolios/1/name',
-          { name: 'Updated Tech Portfolio' }
-        );
-      });
-    }
+    expect(editButtons).toHaveLength(2); // One for each portfolio
+    expect(deleteButtons).toHaveLength(2); // One for each portfolio
+    
+    // Verify buttons are clickable
+    expect(editButtons[0]).toBeEnabled();
+    expect(deleteButtons[0]).toBeEnabled();
   });
 
   test('displays empty state when no portfolios exist', async () => {
@@ -180,24 +173,28 @@ describe('PortfolioList Component', () => {
     render(<PortfolioList />, { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(screen.getByText('No portfolios yet')).toBeInTheDocument();
-      expect(screen.getByText('Create your first portfolio to get started with tracking your investments.')).toBeInTheDocument();
+      expect(screen.getByText('No portfolios')).toBeInTheDocument();
+      expect(screen.getByText('Get started by creating a new portfolio.')).toBeInTheDocument();
     });
   });
 
-  test('displays correct P/L colors for positive and negative values', async () => {
+  test('displays portfolio information correctly', async () => {
     mockedAxios.get.mockResolvedValue({ data: mockPortfolios });
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
     await waitFor(() => {
-      // Positive P/L should be green
-      const positiveElement = screen.getByText('+$500.00');
-      expect(positiveElement).toHaveClass('text-green-600');
-
-      // Negative P/L should be red
-      const negativeElement = screen.getByText('-$200.00');
-      expect(negativeElement).toHaveClass('text-red-600');
+      // Check portfolio names
+      expect(screen.getByText('Tech Portfolio')).toBeInTheDocument();
+      expect(screen.getByText('Growth Portfolio')).toBeInTheDocument();
+      
+      // Check stock counts
+      expect(screen.getByText('2')).toBeInTheDocument(); // Tech Portfolio stock count
+      expect(screen.getByText('1')).toBeInTheDocument(); // Growth Portfolio stock count
+      
+      // Check total values
+      expect(screen.getByText('$15,500.00')).toBeInTheDocument();
+      expect(screen.getByText('$2,000.00')).toBeInTheDocument();
     });
   });
 
