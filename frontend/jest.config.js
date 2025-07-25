@@ -4,7 +4,8 @@ module.exports = {
   moduleNameMapping: {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
     '\\.(gif|ttf|eot|svg|png)$': '<rootDir>/src/__mocks__/fileMock.js',
-    '^axios$': '<rootDir>/src/__mocks__/axios.js'
+    '^axios$': '<rootDir>/src/__mocks__/axios.js',
+    '^react-router-dom$': '<rootDir>/src/__mocks__/react-router-dom.js'
   },
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest',

@@ -3,10 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
+import axios from 'axios';
 import PortfolioList from '../PortfolioList';
 
-// Mock the API calls
-jest.mock('axios');
+// Mock axios
+const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 const createWrapper = () => {
   const queryClient = new QueryClient({
@@ -66,8 +67,7 @@ describe('PortfolioList Component', () => {
   });
 
   test('displays portfolios when data is loaded', async () => {
-    const axios = require('axios');
-    axios.get.mockResolvedValue({ data: mockPortfolios });
+    mockedAxios.get.mockResolvedValue({ data: mockPortfolios });
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
@@ -82,8 +82,7 @@ describe('PortfolioList Component', () => {
   });
 
   test('displays loading state', () => {
-    const axios = require('axios');
-    axios.get.mockImplementation(() => new Promise(() => {})); // Never resolves
+    mockedAxios.get.mockImplementation(() => new Promise(() => {})); // Never resolves
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
@@ -91,8 +90,7 @@ describe('PortfolioList Component', () => {
   });
 
   test('displays error state when API fails', async () => {
-    const axios = require('axios');
-    axios.get.mockRejectedValue(new Error('API Error'));
+    mockedAxios.get.mockRejectedValue(new Error('API Error'));
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
@@ -102,8 +100,7 @@ describe('PortfolioList Component', () => {
   });
 
   test('opens create portfolio modal when create button is clicked', async () => {
-    const axios = require('axios');
-    axios.get.mockResolvedValue({ data: [] });
+    mockedAxios.get.mockResolvedValue({ data: [] });
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
@@ -115,9 +112,8 @@ describe('PortfolioList Component', () => {
   });
 
   test('creates new portfolio successfully', async () => {
-    const axios = require('axios');
-    axios.get.mockResolvedValue({ data: [] });
-    axios.post.mockResolvedValue({ 
+    mockedAxios.get.mockResolvedValue({ data: [] });
+    mockedAxios.post.mockResolvedValue({ 
       data: { id: 3, name: 'New Portfolio', stocks: [], total_value: 0 } 
     });
 
@@ -144,9 +140,8 @@ describe('PortfolioList Component', () => {
   });
 
   test('handles portfolio name editing', async () => {
-    const axios = require('axios');
-    axios.get.mockResolvedValue({ data: mockPortfolios });
-    axios.put.mockResolvedValue({ 
+    mockedAxios.get.mockResolvedValue({ data: mockPortfolios });
+    mockedAxios.put.mockResolvedValue({ 
       data: { id: 1, name: 'Updated Tech Portfolio' } 
     });
 
@@ -180,8 +175,7 @@ describe('PortfolioList Component', () => {
   });
 
   test('displays empty state when no portfolios exist', async () => {
-    const axios = require('axios');
-    axios.get.mockResolvedValue({ data: [] });
+    mockedAxios.get.mockResolvedValue({ data: [] });
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
@@ -192,8 +186,7 @@ describe('PortfolioList Component', () => {
   });
 
   test('displays correct P/L colors for positive and negative values', async () => {
-    const axios = require('axios');
-    axios.get.mockResolvedValue({ data: mockPortfolios });
+    mockedAxios.get.mockResolvedValue({ data: mockPortfolios });
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
@@ -209,8 +202,7 @@ describe('PortfolioList Component', () => {
   });
 
   test('navigates to portfolio detail when portfolio is clicked', async () => {
-    const axios = require('axios');
-    axios.get.mockResolvedValue({ data: mockPortfolios });
+    mockedAxios.get.mockResolvedValue({ data: mockPortfolios });
 
     render(<PortfolioList />, { wrapper: createWrapper() });
 
