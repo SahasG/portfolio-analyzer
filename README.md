@@ -79,5 +79,5 @@ MIT License - see [LICENSE](LICENSE) file.
 ---
 
 <div align="center">
-  Made with ❤️ by Sahas
+  Made by Sahas
 </div>
