@@ -2,7 +2,7 @@ const React = require('react');
 
 module.exports = {
   useNavigate: () => jest.fn(),
-  useParams: () => ({ portfolioId: '1' }),
+  useParams: () => ({ id: '1' }),
   useLocation: () => ({ pathname: '/' }),
   BrowserRouter: ({ children }) => React.createElement('div', { 'data-testid': 'browser-router' }, children),
   MemoryRouter: ({ children }) => React.createElement('div', { 'data-testid': 'memory-router' }, children),
